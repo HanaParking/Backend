@@ -1,0 +1,8 @@
+#패키지 설치 명령어 
+#pip install -r requirements.txt
+fastapi==0.104.1
+uvicorn==0.27.0.post1
+sqlalchemy==2.0.41
+psycopg2-binary==2.9.9
+pydantic==2.10.6
+
