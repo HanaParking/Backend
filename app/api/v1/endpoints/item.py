@@ -4,9 +4,20 @@ from app.schemas.item import ItemCreate, ItemOut
 from app.crud import item as crud_item
 from app.dependencies import get_db
 from typing import List
+from app.db.redis import redis_config
 
 # 아이템 관련 API 엔드포인트
 router = APIRouter()
+
+# redis test
+@router.get("/reids-test")
+async def redis_test():
+	rd = redis_config()
+	rd.set("juice", "orange") # set
+	
+	return {
+	    "data": rd.get("juice") # get
+	}
 
 # 아이템 생성
 @router.post("/", response_model=ItemOut, status_code=201)
@@ -25,3 +36,4 @@ def read_item(item_id: int, db: Session = Depends(get_db)):
 @router.get("/", response_model=List[ItemOut])
 def read_items(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     return crud_item.get_items(db, skip=skip, limit=limit)
+
