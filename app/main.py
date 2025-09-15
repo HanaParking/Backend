@@ -16,5 +16,5 @@ app.include_router(api_router, prefix="/api/v1")
 # 실행 : uvicorn app.main:app --reload
 @app.get("/")
 def read_root():
-    return ("message : hello, world!")
+    return ("message : hello this is hanaparking!")
 
