@@ -1,8 +1,9 @@
 from fastapi import APIRouter, File, UploadFile
-from app.schemas.item import ItemOut
+from app.schemas.item import UploadOut
 from pathlib import Path
 from fastapi.responses import HTMLResponse
 import os
+import uuid
 
 # 아이템 관련 API 엔드포인트
 router = APIRouter()
@@ -13,16 +14,21 @@ UPLOAD_DIR = "upload_images"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # 아이템 생성
-@router.post("/img_upload", response_model=ItemOut, status_code=201)
+@router.post("/img_upload", response_model=UploadOut, status_code=201)
 async def upload_image(file: UploadFile = File(...)):
     try:
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        safe_name = f"{uuid.uuid4().hex}_{Path(file.filename).name}"
+        file_path = os.path.join(UPLOAD_DIR, safe_name)
         with open(file_path, "wb") as f:
             f.write(await file.read())
         
-        return {"message": f"파일 '{file.filename}' 업로드 성공!"}
+        return {
+            "filename": safe_name,
+            "url": f"/upload_images/{safe_name}",  # main.py에서 StaticFiles mount 필요
+            "message": f"파일 '{file.filename}' 업로드 성공!",
+        }
     except Exception as e:
-        return {"message": f"파일 업로드 실패: {e}"}
+        return {"filename": "", "url": None, "message": f"파일 업로드 실패: {e}"}
     
     # 최신 이미지 파일 경로 리턴
 def _get_latest_image_path(upload_dir: str) -> Path | None:
