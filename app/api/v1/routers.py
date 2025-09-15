@@ -9,6 +9,7 @@ api_router = APIRouter()
 api_router.include_router(item.router, prefix="/items", tags=["items"])
 
 # 라즈베리파이로부터 이미지 받는 엔드포인트
-api_router.include_router(ImgUpload.router, prefix="/", tags=["Imgs"])
+api_router.include_router(ImgUpload.router, prefix="/imgUpload", tags=["Imgs"])
+
 
 # API 엔드포인트 추가
