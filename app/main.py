@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from app.db.database import engine
 from app.db.database import Base
 from app.api.v1.routers import api_router
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(
     title="Hana Parking Project",
@@ -18,3 +19,4 @@ app.include_router(api_router, prefix="/api/v1")
 def read_root():
     return ("message : hello this is hanaparking!")
 
+app.mount("/upload_images", StaticFiles(directory="upload_images"), name="upload_images")
