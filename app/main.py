@@ -7,6 +7,9 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from upstash_redis.asyncio import Redis as UpstashRedis
 import os
+from fastapi.middleware.cors import CORSMiddleware
+
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,6 +49,25 @@ app = FastAPI(
     description="API Documentation",
     version="1.0.0",
     lifespan=lifespan, 
+)
+
+# ✅ CORS 설정
+origins = [
+    "http://localhost:5173",       # Vite 개발서버
+    "http://127.0.0.1:5173",
+    "http://hanaparkingcop.com",   # 운영 프런트 도메인(있다면)
+    "https://hanaparkingcop.com",
+    "http://www.hanaparkingcop.com",
+    "https://www.hanaparkingcop.com",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,      # 운영에선 꼭 구체 도메인만!
+    allow_credentials=True,     # 쿠키/세션/Authorization 헤더를 쓴다면 True
+    allow_methods=["*"],        # 필요 시 ["GET","POST",...]로 좁혀도 됨
+    allow_headers=["*"],        # 커스텀 헤더 쓰면 여기에 포함
+    # expose_headers=["*"],     # 프런트에서 특정 응답 헤더를 읽어야 하면 사용
 )
 
 #데이터베이스 엔진을 사용하여 모델 기반으로 테이블 생성
