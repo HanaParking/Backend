@@ -5,11 +5,6 @@ import time, uuid
 
 router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])
 
-@router.get("/healthz")
-async def healthz():
-    # 서버 기동 확인용 (단순 200)
-    return {"status": "ok"}
-
 @router.get("/redis")
 async def redis_diagnostics(r: UpstashRedis = Depends(get_redis)):
     if r is None:
