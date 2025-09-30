@@ -26,7 +26,6 @@ api_router.include_router(diagnostics.router)
 api_router.include_router(parkingResult.router) 
 api_router.include_router(parkingFetch.router) 
 # 주차장(Lot) 관련 API 엔드포인트 포함
-api_router.include_router(item.router, prefix="/parking-lots", tags=["parkingLots"])
 
 # API 엔드포인트 추가
 api_router.include_router(lot.router, prefix="/lot", tags=["lots"])
