@@ -3,6 +3,9 @@ from app.api.v1.endpoints import item
 from app.api.v1.endpoints import ImgUpload
 from app.api.v1.endpoints import realTime
 from app.api.v1.endpoints import diagnostics
+from app.api.v1.endpoints import parkingResult
+from app.api.v1.endpoints import parkingFetch
+from app.api.v1.endpoints import lot
 
 # API 라우터 설정
 api_router = APIRouter()
@@ -19,4 +22,9 @@ api_router.include_router(realTime.router, prefix="/realtime", tags=["realtime"]
 # Redis 진단 엔드포인트 추가
 api_router.include_router(diagnostics.router) 
 
+# 주차 결과 저장 및 조회 엔드포인트 추가
+api_router.include_router(parkingResult.router) 
+api_router.include_router(parkingFetch.router) 
+
 # API 엔드포인트 추가
+api_router.include_router(lot.router, prefix="/lot", tags=["lots"])
