@@ -23,6 +23,7 @@ api_router.include_router(realTime.router, prefix="/realtime", tags=["realtime"]
 api_router.include_router(diagnostics.router) 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 # 주차 결과 저장 및 조회 엔드포인트 추가
 api_router.include_router(parkingResult.router) 
 api_router.include_router(parkingFetch.router) 
@@ -32,5 +33,7 @@ api_router.include_router(item.router, prefix="/parking-lots", tags=["parkingLot
 
 >>>>>>> 44bdf1c (feat: 주차장 api 엔드포인트 및 스키마 추가)
 
+=======
+>>>>>>> 699392c (main : add for demo)
 # API 엔드포인트 추가
 api_router.include_router(lot.router, prefix="/lot", tags=["lots"])
