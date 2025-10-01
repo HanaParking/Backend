@@ -1,0 +1,4 @@
+fastapienv
+.env
+app/_pycache__/
+*.py[cod]
