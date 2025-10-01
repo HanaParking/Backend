@@ -2,14 +2,12 @@ from fastapi import APIRouter, Depends
 from app.api.deps import get_db
 from typing import Annotated
 from sqlalchemy.orm import Session
-from app.models.parkingLot import parkingSpotOut
-from app.schemas.parkingLot import ParkingSpot
+from app.schemas.parkingLot import parkingSpotOut
+from app.crud import parkingLot as crud_spot
 
 router = APIRouter()
 
-# Todos 테이블에 있는 모든 값 조회(결과는 JSON 형식으로-schema에서 정의함)
-@router.get("/parkingSpotList", response_model=list[parkingSpotOut])
-
-# DB 세션 만드는 의존성 주입
-def read_all(db: Annotated[Session, Depends(get_db)]):
-    return db.query(ParkingSpot).all()
+# 실시간 데이터 가져오기
+@router.get("/realtimeSpot", response_model=list[parkingSpotOut])
+def realtime_spot_list(db: Annotated[Session, Depends(get_db)]):
+    return crud_spot.get_realtime_spot(db)
