@@ -30,14 +30,24 @@ async def subscribe(redis = Depends(get_redis)):
         try:
             while True:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+
+                # 1.Pub/Sub 메시지 감지
                 if message:
                     # 최신 Redis 데이터 가져오기
                     data = await redis.get("parking_detail_data")
                     if data:
                         yield f"data: {data}\n\n"
-                await asyncio.sleep(0.1)
+                    else :
+                        yield f"data: {{\"error\": \"no data\"}}\n\n"
+
+                # 2.Keep-alive (브라우저가 연결 끊겼다고 판단하지 않게 하기)
+                else :
+                    yield ":\n\n" # SSE의 ping 역할
+                await asyncio.sleep(0.5)
+
         except asyncio.CancelledError:
             await pubsub.unsubscribe("parking_detail_channel")
+            print("SSE 연결 해제")
             raise
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

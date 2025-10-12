@@ -5,23 +5,31 @@ from app.api.v1.routers import api_router
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from upstash_redis.asyncio import Redis as UpstashRedis
+# from upstash_redis.asyncio import Redis as UpstashRedis
 import os
 from fastapi.middleware.cors import CORSMiddleware
-
+from redis import asyncio as aioredis  # ✅ redis 6.4 호환 import
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_dotenv()  # .env -> os.environ
 
-    url = os.getenv("UPSTASH_REDIS_REST_URL")
-    token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
-    if not url or not token:
-        raise RuntimeError("UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN 환경변수를 설정하세요.")
+    # url = os.getenv("UPSTASH_REDIS_REST_URL")
+    # token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+    
+    # if not url or not token:
+    #     raise RuntimeError("UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN 환경변수를 설정하세요.")
 
     # Upstash 클라이언트 생성 (HTTP 기반, 커넥션 풀/close 필요 없음)
-    app.state.redis = UpstashRedis(url=url, token=token)
+    # app.state.redis = UpstashRedis(url=url, token=token)
+
+    app.state.redis = aioredis.Redis(
+        host = "localhost",
+        port = 6379,
+        password = None,
+        decode_responses=True
+    )
 
     # (선택) 헬스체크 — Upstash SDK에 ping이 없을 수 있어 간단 set/get으로 확인
     try:
@@ -65,7 +73,8 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,      # 운영에선 꼭 구체 도메인만!
+    # allow_origins=origins,      # 운영에선 꼭 구체 도메인만!
+    allow_origins=["*"],
     allow_credentials=True,     # 쿠키/세션/Authorization 헤더를 쓴다면 True
     allow_methods=["*"],        # 필요 시 ["GET","POST",...]로 좁혀도 됨
     allow_headers=["*"],        # 커스텀 헤더 쓰면 여기에 포함
