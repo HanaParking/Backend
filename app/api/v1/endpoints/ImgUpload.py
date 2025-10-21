@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi.responses import HTMLResponse
 import os
 import uuid
+from typing import Optional
 
 # 아이템 관련 API 엔드포인트
 router = APIRouter()
@@ -31,7 +32,7 @@ async def upload_image(file: UploadFile = File(...)):
         return {"filename": "", "url": None, "message": f"파일 업로드 실패: {e}"}
     
     # 최신 이미지 파일 경로 리턴
-def _get_latest_image_path(upload_dir: str) -> Path | None:
+def _get_latest_image_path(upload_dir: str) -> Optional[Path] :
     p = Path(upload_dir)
     if not p.exists():
         return None

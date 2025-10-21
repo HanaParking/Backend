@@ -4,6 +4,7 @@ from app.api.v1.endpoints import ImgUpload
 from app.api.v1.endpoints import realTime
 from app.api.v1.endpoints import diagnostics
 from app.api.v1.endpoints import parkingLot
+from app.api.v1.endpoints import RedisDetailPage
 
 # API 라우터 설정
 api_router = APIRouter()
@@ -25,3 +26,4 @@ api_router.include_router(parkingLot.router, prefix="/parking-lots", tags=["park
 
 
 # API 엔드포인트 추가
+api_router.include_router(RedisDetailPage.router, prefix="/redis/detail", tags=["detail"]) 
