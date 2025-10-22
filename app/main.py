@@ -11,13 +11,56 @@ from app.api.v1.routers import api_router
 
 # ✅ redis.asyncio 사용 (redis>=5)
 import redis.asyncio as redis
+from contextlib import asynccontextmanager
 
 load_dotenv()
+
+# Redis 서버 주소를 환경 변수에서 읽음
+# 예: "redis://localhost:6379/0" → 로컬 Redis 0번 DB
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI의 lifespan 이벤트 핸들러로,
+    앱이 시작될 때 Redis 연결을 생성하고
+    종료될 때 Redis를 안전하게 닫는 역할을 함.
+    """
+    
+    # --- Startup (앱 시작 시 실행) ---
+    # Redis 연결 생성
+    app.state.redis = redis.from_url(
+        REDIS_URL,
+        encoding="utf-8",          # 문자열 인코딩 설정
+        decode_responses=True,     # 바이트 대신 문자열로 응답 받기
+    )
+
+    # Redis 서버에 ping 테스트
+    try:
+        pong = await app.state.redis.ping()  # Redis에 ping 요청 (연결 확인용)
+        if pong is not True:
+            # Redis가 pong 응답을 주지 않으면 오류 발생
+            raise RuntimeError("Redis ping failed")
+    except Exception as e:
+        # 연결이 실패한 경우 예외를 발생시켜 앱 실행을 중단함
+        raise RuntimeError(f"Redis connection failed: {e}")
+
+    # yield 이후에 실제 애플리케이션이 실행됨
+    yield  # <- 이 지점 이후에 FastAPI 라우터가 작동 시작
+
+    # --- Shutdown (앱 종료 시 실행) ---
+    # Redis 연결이 존재하면 닫음
+    r: redis.Redis = getattr(app.state, "redis", None)
+    if r:
+        await r.close()
+        app.state.redis = None  # 참조 제거로 메모리 정리
 
 app = FastAPI(
     title="Hana Parking Project",
     description="API Documentation",
-    version="1.0.0"
+    version="1.0.0", 
+    lifespan=lifespan
 )
 
 # ===== CORS =====
@@ -40,47 +83,8 @@ app.add_middleware(
 # ===== DB 테이블 생성 =====
 Base.metadata.create_all(bind=engine)
 
-# ===== Redis Cloud 연결 =====
-# - TLS(rediss) 지원
-# - decode_responses=True 로 문자열 다루기 편하게
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-
-@app.on_event("startup")
-async def on_startup():
-    # Connection Pool 내부적으로 관리됨
-    app.state.redis = redis.from_url(
-        REDIS_URL,
-        encoding="utf-8",
-        decode_responses=True,
-    )
-    try:
-        pong = await app.state.redis.ping()
-        if pong is not True:
-            raise RuntimeError("Redis ping failed")
-    except Exception as e:
-        # 실패 시 앱 띄우고 싶지 않으면 여기서 예외를 그대로 올려도 됨
-        raise RuntimeError(f"Redis connection failed: {e}")
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    r: redis.Redis = getattr(app.state, "redis", None)
-    if r:
-        await r.close()
-        app.state.redis = None
-
 # ===== 라우터 등록 =====
 app.include_router(api_router, prefix="/api/v1")
-
-# ===== 헬스체크(선택) =====
-@app.get("/health/redis")
-async def health_redis(request: Request):
-    r: redis.Redis = request.app.state.redis
-    try:
-        await r.set("hp:health", "ok", ex=10)
-        val = await r.get("hp:health")
-        return {"redis": "ok", "echo": val}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Redis error: {e}")
 
 # ===== Root =====
 @app.get("/")
