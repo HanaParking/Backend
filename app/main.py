@@ -91,5 +91,8 @@ app.include_router(api_router, prefix="/api/v1")
 def read_root():
     return {"message": "hello this is hanaparking!"}
 
+@app.get("/health")
+def health(): return {"ok": True}
+
 # ===== 정적 파일 =====
 app.mount("/upload_images", StaticFiles(directory="upload_images"), name="upload_images")
