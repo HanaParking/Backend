@@ -15,23 +15,24 @@ class GetParkingLot(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # 실시간 자리 조회
-class ParkingSpotRealOut(BaseModel):
+class ParkingSpotOut(BaseModel):
     lot_code: str
+    spot_id: str
+    occupied_cd: str   
+    
+    #ORM 객체에서 속성 읽어오기 허용
+    model_config = ConfigDict(from_attributes=True)
+    
+class ParkingSpotBasicOut(BaseModel):
+    spot_id: str
     spot_row: int
     spot_column: int
-    occupied_cd: str   
 
-class ParkingSnapshot(BaseModel):
-    lot_id: str = Field(..., description="주차장 ID (채널/키 네임에 사용)")
-    slots: List[Bit] = Field(..., description="[1,0,1,...] 점유 배열 (index=슬롯ID)")
-    version: int = Field(..., description="증분 버전(모델 inference 카운터 등)")
-    ts: datetime = Field(default_factory=datetime.utcnow)
-    kind: Literal["snapshot"] = "snapshot"
-    # (선택) 길이 검증: 등록된 총 슬롯 수가 있다면 여기서 체크
-    expected_len: Optional[int] = None
+    model_config = ConfigDict(from_attributes=True)
+    
+class RealtimePayload(BaseModel):
+    positions: List[List[int]]
+    carExists: List[List[int]]
+    ts: str  # ISO 문자열을 그대로 쓸 경우 str
 
-    @model_validator(mode="after")
-    def _len_check(self):
-        if self.expected_len is not None and len(self.slots) != self.expected_len:
-            raise ValueError(f"slots length {len(self.slots)} != expected_len {self.expected_len}")
-        return self
+    model_config = ConfigDict(from_attributes=True)

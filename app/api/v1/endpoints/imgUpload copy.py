@@ -9,10 +9,12 @@ from datetime import datetime, timezone
 from typing import List, Tuple
 from app.dependencies import get_db, get_redis
 from app.schemas.imgUpload import UploadOut
-from app.models.parkingLot import ParkingSpotHistory, ParkingSpotReal  # 아래 3) 참고
+from app.models.parkingLot import ParkingSpotHistory  # 아래 3) 참고
 from ultralytics import YOLO
 import re
 from typing import Dict, Any
+from datetime import datetime, timezone
+from app.crud import parkingLot as crud_parkingLot
 
 router = APIRouter()
 
@@ -113,9 +115,12 @@ def imdecode_upload(file_bytes: bytes) -> np.ndarray:
         raise ValueError("이미지 디코딩 실패")
     return img
 
-
 @router.post("/img_upload", response_model=UploadOut, status_code=201)
-async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_db), redis = Depends(get_redis),  ):
+async def upload_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    redis = Depends(get_redis),
+):
     # 1) 파일 저장 (정적 파일 제공용)
     safe_name = f"{uuid.uuid4().hex}_{Path(file.filename).name}"
     file_path = os.path.join(UPLOAD_DIR, safe_name)
@@ -128,63 +133,12 @@ async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_d
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"파일 업로드/디코딩 실패: {e}")
 
-    # 2) YOLO 추론 + ROI 반복
-    rows_to_insert: List[ParkingSpotHistory] = []
-    today = datetime.now().date()  # Asia/Seoul 타임존까지 엄밀히 원하면 pytz로 변환
+    # ---------------------------
+    # ✅ positions 기준으로 ROI_DATA 적용 → carExists 작성 + Redis 발행
+    # ---------------------------
 
-    try:
-        for roi in ROI_DATA:
-            src_pts = sort_points_clockwise(roi["points"])
-            dst_pts = np.float32([
-                [0, 0],
-                [CROP_SIZE[0], 0],
-                [CROP_SIZE[0], CROP_SIZE[1]],
-                [0, CROP_SIZE[1]]
-            ])
-
-            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-            warped = cv2.warpPerspective(img, M, CROP_SIZE)
-
-            # YOLO 분류
-            result = MODEL(warped, verbose=False)
-            label_idx = int(result[0].probs.top1)
-            label_name = MODEL.names[label_idx]
-            # empty → 0, 그 외 → 1
-            occupied_cd = '0' if label_name.lower() == "empty" else '1'
-
-            spot_row, spot_col = parse_row_col(roi)
-            lot_code = roi.get("lot_code") or roi.get("lotCode") or "A1"  # 필요시 고정/주입
-
-            rows_to_insert.append(
-                ParkingSpotHistory(
-                    history_dt=today,
-                    lot_code=lot_code,
-                    spot_row=spot_row,
-                    spot_column=spot_col,
-                    occupied_cd=occupied_cd,
-                    # created_at는 DB default CURRENT_TIMESTAMP 사용
-                )
-            )
-
-            db.merge(
-                ParkingSpotReal(
-                lot_code=lot_code,
-                spot_row=spot_row,
-                spot_column=spot_col,
-                occupied_cd=occupied_cd,
-                )
-            )
-
-        # 3) DB INSERT (bulk)
-        db.bulk_save_objects(rows_to_insert)
-        db.commit()
-
-
-        # ---------------------------
-        # ✅ (추가) Redis에 업로드 + 발행
-        # ---------------------------
-
-        positions = [[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    # (예시) positions 고정 맵: 필요 시 외부/JSON/DB 등에서 주입 가능
+    positions = [[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1],
@@ -218,50 +172,65 @@ async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_d
     [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1],
 ]
 
-        # 2) 크기 파악
-        rows = len(positions)
-        cols = len(positions[0]) if rows > 0 else 0
+    rows = len(positions)
+    cols = len(positions[0]) if rows > 0 else 0
 
-        # 3) 기본값 False로 채운 동일 크기 배열
-        car_exists = [[False for _ in range(cols)] for _ in range(rows)]
+    # positions와 동일 크기의 carExists 초기화 (기본 False)
+    car_exists = [[False for _ in range(cols)] for _ in range(rows)]
 
-        # 4) 모델 결과를 (row,col) -> bool(차 있음) 맵으로 준비
-        #    occupied_cd: '0' = empty(차 없음), 그 외 = occupied(차 있음)
-        occ_map = {}
-        for r in rows_to_insert:
-            rr = r.spot_row - 1  # 1-based → 0-based
-            cc = r.spot_column - 1
-            if 0 <= rr < rows and 0 <= cc < cols and positions[rr][cc] == 1:
-                occ_map[(rr, cc)] = (r.occupied_cd != '0')
+    # 주차 슬롯(=1) 좌표를 행우선(row-major) 순서로 수집
+    slot_coords = []
+    for i, row_vals in enumerate(positions):
+        for j, v in enumerate(row_vals):
+            if v == 1:
+                slot_coords.append((i, j))
 
-        # 5) positions에 따라 car_exists 채우기
-        for i in range(rows):
-            for j in range(cols):
-                if positions[i][j] == 1:
-                    # 분석 결과가 없으면 기본 False 유지
-                    car_exists[i][j] = occ_map.get((i, j), False)
-                # positions==0 인 곳은 기본 False 그대로
+    # ROI_DATA 순서대로 YOLO 추론 → 슬롯 좌표에 매핑
+    # ROI 개수 < 슬롯 개수: 남는 슬롯은 기본 False 유지
+    # ROI 개수 > 슬롯 개수: 초과 ROI는 무시
+    try:
+        for roi, (i, j) in zip(ROI_DATA, slot_coords):
+            src_pts = sort_points_clockwise(roi["points"])
+            dst_pts = np.float32(
+                [
+                    [0, 0],
+                    [CROP_SIZE[0], 0],
+                    [CROP_SIZE[0], CROP_SIZE[1]],
+                    [0, CROP_SIZE[1]],
+                ]
+            )
 
-        # 6) Redis payload
+            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            warped = cv2.warpPerspective(img, M, CROP_SIZE)
+
+            # YOLO 분류
+            result = MODEL(warped, verbose=False)
+            label_idx = int(result[0].probs.top1)
+            label_name = MODEL.names[label_idx]
+
+            # empty면 False(차 없음), 그 외면 True(차 있음)
+            occupied = (label_name.lower() != "empty")
+            car_exists[i][j] = occupied
+
+        # Redis payload 구성 및 발행
         realtime_payload = {
-            "positions": positions,
-            "carExists": car_exists,  # 차가 있으면 True, 없으면 False
+            "positions": positions,   # 원본 그리드
+            "carExists": car_exists,  # 동일 크기, 슬롯만 결과 반영
+            "ts": datetime.now(timezone.utc).isoformat(),
         }
 
         await redis.set("parking_detail_data", json.dumps(realtime_payload))
         await redis.publish("parking_detail_channel", "updated")
-        # ---------------------------
-
 
     except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"추론/DB 저장 실패: {e}")
+        # 이 블록은 추론/Redis 단계 예외 처리
+        raise HTTPException(status_code=500, detail=f"추론/발행 실패: {e}")
 
     # 4) 응답
     return {
         "filename": safe_name,
         "url": f"/upload_images/{safe_name}",
-        "message": f"분석 완료: {len(rows_to_insert)}개 스팟 저장",
+        "message": f"분석 완료: ROI={len(ROI_DATA)}, 슬롯={len(slot_coords)}",
     }
 
     

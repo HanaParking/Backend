@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Integer, TIMESTAMP, DateTime, Date, text, func
+from sqlalchemy import String, Integer, TIMESTAMP, DateTime, Date, Index, text, func
 from app.db.database import Base
 from typing import Optional
 
@@ -24,19 +24,19 @@ class ParkingSpotHistory(Base):
     history_dt: Mapped[str] = mapped_column(Date, primary_key=True, nullable=False)
     history_seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     lot_code: Mapped[str] = mapped_column(String(50), nullable=False)
-    spot_row: Mapped[int] = mapped_column(Integer, nullable=False)
-    spot_column: Mapped[int] = mapped_column(Integer, nullable=False)
+    spot_id: Mapped[str] = mapped_column(String(10), nullable=False)
     occupied_cd: Mapped[str] = mapped_column(String(1), nullable=False)
     created_at: Mapped[Optional[str]] = mapped_column(DateTime, server_default=func.current_timestamp())
-    updated_at: Mapped[Optional[str]] = mapped_column(DateTime, nullable=True)
+    
+class ParkingSpot(Base):
+    __tablename__ = "parking_spot"
+    __table_args__ = (
+        Index("ix_parking_spot_lot_code", "lot_code"),
+        {"schema": "hanaparking"},
+    )
 
-# 실시간 주차장 자리 테이블
-class ParkingSpotReal(Base):
-    __tablename__ = "parking_spot_real"
-    __table_args__ = {"schema": "hanaparking"}  # 스키마 지정
-
-    # PK: (lot_code, spot_row, spot_column)
-    lot_code: Mapped[str] = mapped_column(String(50), primary_key=True)
-    spot_row: Mapped[int] = mapped_column(Integer, primary_key=True)
-    spot_column: Mapped[int] = mapped_column(Integer, primary_key=True)
-    occupied_cd: Mapped[str] = mapped_column(String(1), nullable=False)
+    # PK는 spot_id 하나라고 가정 (필요하면 복합키로 변경)
+    spot_id: Mapped[str]   = mapped_column(String(10), primary_key=True)
+    lot_code: Mapped[str]  = mapped_column(String(50), nullable=False)
+    spot_row: Mapped[int]  = mapped_column(Integer, nullable=False)
+    spot_column: Mapped[int]= mapped_column(Integer, nullable=False)
