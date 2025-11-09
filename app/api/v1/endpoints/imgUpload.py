@@ -15,6 +15,8 @@ import re
 from typing import Dict, Any
 from datetime import datetime, timezone
 from app.crud import parkingLot as crud_parkingLot
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 router = APIRouter()
 
@@ -142,16 +144,24 @@ def build_positions_from_db(all_coords: List[Tuple[int, int]]) -> List[List[int]
         positions[i][j] = 1
     return positions
 
-def infer_and_map(img_bgr: np.ndarray,
-                  ROI_DATA: List[dict],
-                  spot_map: Dict[str, Tuple[int, int]],
-                  positions: List[List[int]]) -> List[List[int]]:
-    """
-    ROI의 name(spot_id)을 DB 매핑으로 좌표(i,j)에 연결한 뒤,
-    YOLO 분류 결과를 해당 칸에만 반영.
-    car_exists를 0/1(int) 형태로 반환.
-    """
-    # 0으로 초기화된 car_exists 생성
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from sqlalchemy.orm import Session
+from app.models.parkingLot import ParkingSpotHistory
+
+# infer + DB 저장
+def infer_and_map(
+    db: Session,
+    lot_code: str,
+    img_bgr: np.ndarray,
+    ROI_DATA: List[dict],
+    spot_map: Dict[str, Tuple[int, int]],
+    positions: List[List[int]],
+) -> List[List[int]]:
+
+    ROWS = len(positions)
+    COLS = len(positions[0]) if ROWS > 0 else 0
+
     car_exists = [[0 for _ in range(COLS)] for _ in range(ROWS)]
 
     dst_pts = np.float32([
@@ -161,8 +171,14 @@ def infer_and_map(img_bgr: np.ndarray,
         [0, CROP_SIZE[1]],
     ])
 
+    # ✅ Asia/Seoul 기준 '오늘' 날짜 (history_dt)
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+
+    # ✅ 배치 insert용 버퍼
+    rows_to_insert = []
+
     for roi in ROI_DATA:
-        spot_id = str(roi.get("name", "")).strip()
+        spot_id = str(roi.get("name", "")).strip()  # 예: 'm252'
         pts = roi.get("points")
 
         if not spot_id or not pts or len(pts) != 4:
@@ -188,11 +204,30 @@ def infer_and_map(img_bgr: np.ndarray,
             occupied = 0 if label_name.lower() == "empty" else 1
             car_exists[i][j] = occupied
 
+            # === ⬇️ 히스토리 INSERT 버퍼에 추가 (occupied_cd는 '0'/'1' 문자열) ===
+            rows_to_insert.append({
+                "history_dt": today,          # DATE
+                # history_seq는 SERIAL → DB가 자동 채움
+                "lot_code": lot_code,         # 예: 'A1'
+                "spot_id": spot_id,           # 예: 'm252' (모델에서 String(10))
+                "occupied_cd": "1" if occupied == 1 else "0",
+                # created_at/updated_at은 server_default로 DB가 채움
+            })
+
         except Exception:
             # 해당 ROI만 건너뛰고 계속
             pass
 
+    # ✅ 한 번에 대량 INSERT (성능↑)
+    if rows_to_insert:
+        # 방법 1) 매핑 기반 벌크 인서트
+        db.bulk_insert_mappings(ParkingSpotHistory, rows_to_insert)
+        # 방법 2) 객체로 넣고 싶다면:
+        # db.bulk_save_objects([ParkingSpotHistory(**row) for row in rows_to_insert])
+        db.commit()
+
     return car_exists
+
 
 
 # ---------- 엔드포인트 ----------
@@ -229,9 +264,9 @@ async def upload_image(
     # 3) DB 기준 positions(38x28, 슬롯=1) 구성
     positions = build_positions_from_db(all_coords)
 
-    # 4) ROI 분류 결과를 해당 좌표에 반영
+    # 4) ROI 분류 결과를 해당 좌표에 반영 + DB 저장
     try:
-        car_exists = infer_and_map(img, ROI_DATA, spot_map, positions)
+        car_exists = infer_and_map(db, lot_code, img, ROI_DATA, spot_map, positions)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"추론 실패: {e}")
 
